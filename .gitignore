@@ -1,0 +1,94 @@
+# =========================
+# Python / FastAPI
+# =========================
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# =========================
+# Node / React
+# =========================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# React / Vite builds
+dist/
+build/
+.vite/
+
+# Environment variables
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# =========================
+# IDE / Editors
+# =========================
+
+.vscode/
+.idea/
+
+# =========================
+# OS
+# =========================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs
+# =========================
+
+*.log
+logs/
+
+# =========================
+# Testing / Coverage
+# =========================
+
+coverage/
+.pytest_cache/
+
+# =========================
+# Local database / data
+# =========================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Temporary files
+# =========================
+
+*.tmp
+*.temp
+*.swp
+*.swo
