@@ -8,8 +8,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Text,
+    Boolean,
+    JSON,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from pgvector.sqlalchemy import Vector
 
 from app.db.database import Base
 
@@ -103,4 +107,112 @@ class SupportTicket(Base):
 
     customer: Mapped["Customer"] = relationship(
         back_populates="support_tickets"
+    )
+
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    policy_id: Mapped[str] = mapped_column(
+        String(100),
+        index=True,
+    )
+
+    document_name: Mapped[str] = mapped_column(
+        String(255)
+    )
+
+    version: Mapped[str] = mapped_column(
+        String(50)
+    )
+
+    file_name: Mapped[str] = mapped_column(
+        String(255)
+    )
+
+    file_hash: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+    )
+
+    s3_key: Mapped[str] = mapped_column(
+        String(500),
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        default="UPLOADED",
+    )
+
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime
+    )
+
+    effective_until: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    chunk_index: Mapped[int] = mapped_column(
+        Integer
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text
+    )
+
+    # Bedrock Titan Text Embeddings V2
+    # 1024 dimensions
+    embedding: Mapped[list[float]] = mapped_column(
+        Vector(1024)
+    )
+
+    chunk_metadata: Mapped[dict] = mapped_column(
+    "metadata",
+    JSON,
+    default=dict,
+)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    document: Mapped["Document"] = relationship(
+        back_populates="chunks"
     )
