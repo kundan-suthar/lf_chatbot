@@ -12,10 +12,14 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
-from app.db.models import Document
+from app.db.models import Document, DocumentChunk
 from app.schemas.document import DocumentResponse
 from app.storage.s3 import S3Client
 
+from io import BytesIO
+from pypdf import PdfReader
+from app.services.llm.embeddings import EmbeddingClient
+from app.ingestion.chunker import chunk_text
 
 router = APIRouter(
     prefix="/documents",
@@ -137,3 +141,141 @@ async def upload_document(
     db.refresh(document)
 
     return document
+
+
+@router.post("/{document_id}/process")
+def process_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    # ---------------------------------------------------------
+    # Find document
+    # ---------------------------------------------------------
+
+    document = db.get(Document, document_id)
+
+    if not document:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    # ---------------------------------------------------------
+    # Prevent processing invalid states
+    # ---------------------------------------------------------
+
+    if document.status == "PROCESSING":
+        raise HTTPException(
+            status_code=409,
+            detail="Document is already being processed",
+        )
+
+    # ---------------------------------------------------------
+    # Mark processing
+    # ---------------------------------------------------------
+
+    document.status = "PROCESSING"
+    db.commit()
+
+    try:
+        # -----------------------------------------------------
+        # Download PDF from S3
+        # -----------------------------------------------------
+
+        s3 = S3Client()
+
+        pdf_bytes = s3.download_file(
+            document.s3_key
+        )
+
+        # -----------------------------------------------------
+        # Extract text
+        # -----------------------------------------------------
+
+        reader = PdfReader(
+            BytesIO(pdf_bytes)
+        )
+
+        pages = []
+
+        for page in reader.pages:
+            page_text = page.extract_text()
+
+            if page_text:
+                pages.append(page_text)
+
+        full_text = "\n\n".join(pages)
+
+        if not full_text.strip():
+            raise ValueError(
+                "No text could be extracted from PDF"
+            )
+
+        # -----------------------------------------------------
+        # Chunk text
+        # -----------------------------------------------------
+
+        chunks = chunk_text(full_text)
+
+        if not chunks:
+            raise ValueError(
+                "No chunks generated from document"
+            )
+
+        # -----------------------------------------------------
+        # Generate embeddings
+        # -----------------------------------------------------
+
+        embedding_client = EmbeddingClient()
+
+        # Remove existing chunks when re-processing
+        db.query(DocumentChunk).filter(
+            DocumentChunk.document_id == document.id
+        ).delete()
+
+        for index, content in enumerate(chunks):
+
+            embedding = embedding_client.embed(
+                content
+            )
+
+            chunk = DocumentChunk(
+                document_id=document.id,
+                chunk_index=index,
+                content=content,
+                embedding=embedding,
+                chunk_metadata={
+                    "document_name": document.document_name,
+                    "policy_id": document.policy_id,
+                    "version": document.version,
+                    "source": document.file_name,
+                },
+            )
+
+            db.add(chunk)
+
+        # -----------------------------------------------------
+        # Mark document ready
+        # -----------------------------------------------------
+
+        document.status = "READY"
+
+        db.commit()
+
+        return {
+            "document_id": document.id,
+            "status": document.status,
+            "chunks_created": len(chunks),
+        }
+
+    except Exception as exc:
+
+        db.rollback()
+
+        document.status = "FAILED"
+        db.commit()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document processing failed: {str(exc)}",
+        )

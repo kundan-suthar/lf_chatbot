@@ -34,3 +34,11 @@ class S3Client:
         )
 
         return f"s3://{self.bucket}/{s3_key}"
+
+    def download_file(self, s3_key: str) -> bytes:
+        response = self.client.get_object(
+            Bucket=self.bucket,
+            Key=s3_key,
+        )
+
+        return response["Body"].read()
