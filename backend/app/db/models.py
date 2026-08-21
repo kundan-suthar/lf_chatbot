@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID as PythonUUID
 
 from sqlalchemy import (
     String,
@@ -10,7 +11,12 @@ from sqlalchemy import (
     Text,
     Boolean,
     JSON,
+    CheckConstraint,
+    Index,
+    UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pgvector.sqlalchemy import Vector
@@ -36,6 +42,105 @@ class Customer(Base):
 
     support_tickets: Mapped[list["SupportTicket"]] = relationship(
         back_populates="customer"
+    )
+
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="customer"
+    )
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id"),
+        nullable=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="active",
+        server_default="active",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=text("now()"),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=text("now()"),
+        onupdate=text("now()"),
+    )
+
+    customer: Mapped["Customer | None"] = relationship(
+        back_populates="conversations"
+    )
+
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="Message.sequence",
+    )
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'tool')",
+            name="ck_messages_role",
+        ),
+        Index(
+            "ix_messages_conversation_sequence",
+            "conversation_id",
+            "sequence",
+        ),
+        UniqueConstraint(
+            "conversation_id",
+            "sequence",
+            name="uq_messages_conversation_sequence",
+        ),
+    )
+
+    id: Mapped[PythonUUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    conversation_id: Mapped[PythonUUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[list | dict] = mapped_column(JSON, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    route: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    message_metadata: Mapped[dict | None] = mapped_column(
+        "message_metadata",
+        JSON,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=text("now()"),
+    )
+
+    conversation: Mapped["Conversation"] = relationship(
+        back_populates="messages"
     )
 
 

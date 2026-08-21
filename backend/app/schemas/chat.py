@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 
 class ChatRequest(BaseModel):
@@ -8,6 +9,7 @@ class ChatRequest(BaseModel):
     )
 
     customer_id: int | None = None
+    conversation_id: UUID | None = None
 
 
 class ChatSource(BaseModel):
@@ -18,6 +20,7 @@ class ChatSource(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    conversation_id: UUID
     answer: str
     route: str
-    sources: list[ChatSource] = []
+    sources: list[ChatSource] = Field(default_factory=list)

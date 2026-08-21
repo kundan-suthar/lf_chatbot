@@ -64,12 +64,17 @@ class ChatRouter:
     def __init__(self, bedrock: BedrockClient):
         self.bedrock = bedrock
 
-    def route(self, message: str) -> str:
+    def route(
+        self,
+        message: str,
+        history: list[dict] | None = None,
+    ) -> str:
 
         response = self.bedrock.converse(
             model_id=ROUTER_MODEL,
             system_prompt=ROUTER_SYSTEM_PROMPT,
             message=message,
+            history=history,
         )
 
         try:

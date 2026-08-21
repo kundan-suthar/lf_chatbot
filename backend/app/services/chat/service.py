@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -7,6 +8,7 @@ from app.services.customer_service import CustomerService
 from app.services.llm.bedrock import BedrockClient
 from app.rag.retriever import retrieve_relevant_chunks
 from app.tools.customer_api import CUSTOMER_API_FUNCTIONS
+from app.services.conversation_service import ConversationService
 
 
 ROUTER_MODEL = "google.gemma-3-12b-it"
@@ -99,6 +101,27 @@ class ChatService:
         self.customer_service = CustomerService(
             db
         )
+        self.conversation_service = ConversationService(db)
+
+    def _complete_response(
+        self,
+        conversation_id: UUID,
+        answer: str,
+        route: str,
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.conversation_service.add_assistant_message(
+            conversation_id=conversation_id,
+            content=answer,
+            route=route,
+            sources=sources,
+        )
+        return {
+            "conversation_id": conversation_id,
+            "answer": answer,
+            "route": route,
+            "sources": sources,
+        }
 
     def _execute_customer_tool(
         self,
@@ -125,13 +148,22 @@ class ChatService:
         self,
         message: str,
         customer_id: int | None = None,
+        conversation_id: UUID | None = None,
     ):
+
+        conversation_id, history = (
+            self.conversation_service.start_user_message(
+                conversation_id=conversation_id,
+                customer_id=customer_id,
+                content=message,
+            )
+        )
 
         # --------------------------------------------------
         # 1. Decide route
         # --------------------------------------------------
 
-        route = self.router.route(message)
+        route = self.router.route(message, history=history)
 
         # --------------------------------------------------
         # 2. RAG
@@ -147,14 +179,15 @@ class ChatService:
 
             if not chunks:
 
-                return {
-                    "answer": (
+                return self._complete_response(
+                    conversation_id=conversation_id,
+                    answer=(
                         "I couldn't find relevant information "
                         "in the Loanfront knowledge base."
                     ),
-                    "route": "RAG",
-                    "sources": [],
-                }
+                    route="RAG",
+                    sources=[],
+                )
 
             context = "\n\n".join(
                 [
@@ -190,7 +223,7 @@ class ChatService:
                             {context}
                             """
 
-            answer = self.llm.generate(prompt)
+            answer = self.llm.generate(prompt, history=history)
 
             sources = []
 
@@ -216,11 +249,12 @@ class ChatService:
                     }
                 )
 
-            return {
-                "answer": answer,
-                "route": "RAG",
-                "sources": sources,
-            }
+            return self._complete_response(
+                conversation_id=conversation_id,
+                answer=answer,
+                route="RAG",
+                sources=sources,
+            )
 
         # --------------------------------------------------
         # 3. Customer API
@@ -230,15 +264,16 @@ class ChatService:
 
             if customer_id is None:
 
-                return {
-                    "answer": (
+                return self._complete_response(
+                    conversation_id=conversation_id,
+                    answer=(
                         "Please provide your customer "
                         "information so I can check "
                         "your account."
                     ),
-                    "route": "CUSTOMER_API",
-                    "sources": [],
-                }
+                    route="CUSTOMER_API",
+                    sources=[],
+                )
 
             answer = self.llm.converse_with_tools(
                 model_id=CUSTOMER_TOOL_MODEL,
@@ -249,6 +284,7 @@ class ChatService:
                 ),
                 message=message,
                 tools=CUSTOMER_API_TOOLS,
+                history=history,
                 tool_executor=lambda tool_name, arguments: (
                     self._execute_customer_tool(
                         tool_name,
@@ -258,8 +294,9 @@ class ChatService:
                 ),
             )
 
-            return {
-                "answer": answer,
-                "route": "CUSTOMER_API",
-                "sources": [],
-            }
+            return self._complete_response(
+                conversation_id=conversation_id,
+                answer=answer,
+                route="CUSTOMER_API",
+                sources=[],
+            )

@@ -19,6 +19,7 @@ class BedrockClient:
         model_id: str,
         system_prompt: str,
         message: str,
+        history: list[dict[str, Any]] | None = None,
     ) -> str:
 
         response = self.client.converse(
@@ -28,7 +29,7 @@ class BedrockClient:
                     "text": system_prompt
                 }
             ],
-            messages=[
+            messages=[*(history or []),
                 {
                     "role": "user",
                     "content": [
@@ -42,11 +43,16 @@ class BedrockClient:
 
         return response["output"]["message"]["content"][0]["text"]
 
-    def generate(self, message: str) -> str:
+    def generate(
+        self,
+        message: str,
+        history: list[dict[str, Any]] | None = None,
+    ) -> str:
         return self.converse(
             model_id="google.gemma-3-12b-it",
             system_prompt="You are the Loanfront customer support assistant.",
             message=message,
+            history=history,
         )
 
     def converse_with_tools(
@@ -56,8 +62,10 @@ class BedrockClient:
         message: str,
         tools: list[dict[str, Any]],
         tool_executor: Callable[[str, dict[str, Any]], dict[str, Any]],
+        history: list[dict[str, Any]] | None = None,
     ) -> str:
         messages: list[dict[str, Any]] = [
+            *(history or []),
             {
                 "role": "user",
                 "content": [{"text": message}],
